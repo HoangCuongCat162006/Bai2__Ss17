@@ -20,8 +20,9 @@ public class Bai2Ss17Application {
     CommandLineRunner initDatabase(MenuItemRepository menuItemRepository) {
         return args -> {
             if (menuItemRepository.count() == 0) {
-                menuItemRepository.save(new MenuItem(101L, "Phở Bò", 55000.0));
-                menuItemRepository.save(new MenuItem(101L, "Bún Chả", 60000.0));
+                menuItemRepository.save(new MenuItem(101L, "Phở Bò Tái Nạm", 55000.0));
+                menuItemRepository.save(new MenuItem(101L, "Bún Chả Hà Nội", 60000.0));
+                menuItemRepository.save(new MenuItem(102L, "Cơm Tấm Sườn Bì", 50000.0));
             }
         };
     }

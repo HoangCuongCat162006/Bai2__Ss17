@@ -1,72 +1,68 @@
-# Báo Cáo & Bài Nộp - Session 17 - Bài Tập 2: Triển khai Lazy Loading với @Cacheable
+# Bài Tập 2: Triển khai Lazy Loading với @Cacheable trong Spring Boot
 
-## 1. Giới thiệu tổng quan
-Dự án triển khai cơ chế **Lazy Loading** trong Spring Boot sử dụng Spring Cache với annotation `@Cacheable`.
-- Khi client gọi API lần đầu (hoặc cache chưa có dữ liệu): Hệ thống rơi vào luồng **Cache Miss**, thực hiện truy vấn Database (mô phỏng tác vụ nặng với `Thread.sleep(3000)`) và tự động lưu kết quả vào Cache.
-- Khi client gọi lại API lần thứ hai với cùng `restaurantId`: Hệ thống kích hoạt **Cache Hit**, lấy trực tiếp dữ liệu từ Cache mà không phải gọi phương thức truy vấn hay chạm vào Database, thời gian phản hồi đạt **< 20ms**.
+Repository: [https://github.com/HoangCuongCat162006/Bai2__Ss17](https://github.com/HoangCuongCat162006/Bai2__Ss17)
 
----
-
-## 2. Đáp ứng chi tiết 7 tiêu chí đánh giá
-
-| STT | Tiêu chí đánh giá | Trạng thái | Minh chứng trong mã nguồn |
-| :---: | :--- | :---: | :--- |
-| **1** | **Đúng annotation** | ✅ ĐẠT | Phương thức `getMenuByRestaurantId(Long id)` trong `RestaurantService` được đánh dấu `@Cacheable(value = "restaurantMenu", key = "#id")`. |
-| **2** | **Cache Miss** | ✅ ĐẠT | Trong `RestaurantService.java`, có log truy vấn DB: `log.info(">>> [DATABASE QUERY]...")` và `Thread.sleep(3000)` mô phỏng độ trễ truy vấn nặng. Thời gian phản hồi lần 1 ~ 3,024 ms (>= 3s). |
-| **3** | **Cache Hit** | ✅ ĐẠT | Lớp chính `Bai2Ss17Application.java` được cấu hình `@EnableCaching`. Lần gọi thứ hai không chạy vào thân hàm service và không truy vấn DB. |
-| **4** | **Thời gian lần 2** | ✅ ĐẠT | Lần gọi thứ 2 phản hồi trong **8 ms** (đáp ứng tiêu chuẩn đề bài **< 20ms**). |
-| **5** | **Cache key đúng** | ✅ ĐẠT | Cache key được cấu hình động theo tham số `key = "#id"` (ví dụ: key = 101L). Các ID khác nhau được lưu độc lập. |
-| **6** | **Nộp file RestaurantService.java** | ✅ ĐẠT | File `RestaurantService.java` tồn tại tại đường dẫn: `src/main/java/com/example/bai2__ss17/service/RestaurantService.java`. |
-| **7** | **Nộp ảnh Postman** | ✅ ĐẠT | Nộp đầy đủ ảnh minh chứng thời gian phản hồi cho cả 2 lần gọi trong thư mục gốc và `screenshots/`. |
+## 1. Giới thiệu bài toán
+Bài toán yêu cầu triển khai kỹ thuật **Lazy Loading** (tải trễ / nạp khi cần) kết hợp **Spring Cache** (`@Cacheable`):
+- Khi người dùng gửi yêu cầu lần đầu tiên (Cache Miss): Hệ thống truy vấn cơ sở dữ liệu (được mô phỏng bằng `Thread.sleep(3000)` đại diện cho tác vụ truy vấn nặng / nhiều bảng JOIN), sau đó lưu kết quả vào vùng đệm Cache (`restaurantMenu`).
+- Khi người dùng gửi các yêu cầu tiếp theo với cùng ID nhà hàng (Cache Hit): Dữ liệu được lấy ngay lập tức từ Cache mà **không gọi lại hàm truy vấn cơ sở dữ liệu**, thời gian phản hồi giảm từ **>3000ms xuống chỉ còn vài mili-giây (<20ms)**.
 
 ---
 
-## 3. Ảnh chụp minh chứng kiểm thử Postman
-
-### 🔹 Lần 1: Cache Miss (Thời gian: ~3,024 ms >= 3000 ms)
-Lần gọi đầu tiên, dữ liệu chưa có trong cache. Service thực thi câu lệnh SQL và độ trễ 3000ms:
-![Lần 1 - Cache Miss](screenshots/postman_lan1_cache_miss.png)
+## 2. Cấu trúc thư mục dự án
+```text
+Bai2__Ss17/
+├── src/
+│   ├── main/
+│   │   ├── java/com/example/bai2__ss17/
+│   │   │   ├── Bai2Ss17Application.java             # @SpringBootApplication, @EnableCaching, seed data
+│   │   │   ├── controller/
+│   │   │   │   └── RestaurantController.java         # REST API GET /restaurants/{restaurantId}/menu
+│   │   │   ├── model/
+│   │   │   │   └── MenuItem.java                     # JPA Entity lưu món ăn
+│   │   │   ├── repository/
+│   │   │   │   └── MenuItemRepository.java           # Spring Data JPA Repository
+│   │   │   └── service/
+│   │   │       └── RestaurantService.java            # Service xử lý Lazy Loading (@Cacheable, Thread.sleep)
+│   │   └── resources/
+│   │       └── application.properties                # Cấu hình H2 database, Hibernate SQL log
+│   └── test/
+│       └── java/com/example/bai2__ss17/
+│           ├── Bai2Ss17ApplicationTests.java         # Context load test
+│           └── RestaurantCacheTest.java              # Unit & Integration test đo đạc tốc độ Cache Hit/Miss
+├── build.gradle                                      # Dependencies: starter-web, starter-cache, starter-data-jpa, h2
+└── README.md
+```
 
 ---
 
-### 🔹 Lần 2: Cache Hit (Thời gian: 8 ms < 20 ms)
-Lần gọi thứ hai cùng `restaurantId = 101`, dữ liệu được lấy ngay từ cache:
-![Lần 2 - Cache Hit](screenshots/postman_lan2_cache_hit.png)
+## 3. Các thành phần chính đáp ứng tiêu chí đề bài
 
----
-
-## 4. Chi tiết mã nguồn triển khai
-
-### 4.1. File `RestaurantService.java`
+### 3.1. Kích hoạt Caching (`@EnableCaching`)
+Tại [Bai2Ss17Application.java](src/main/java/com/example/bai2__ss17/Bai2Ss17Application.java):
 ```java
-package com.example.bai2__ss17.service;
+@SpringBootApplication
+@EnableCaching
+public class Bai2Ss17Application {
+    public static void main(String[] args) {
+        SpringApplication.run(Bai2Ss17Application.class, args);
+    }
+}
+```
 
-import com.example.bai2__ss17.model.MenuItem;
-import com.example.bai2__ss17.repository.MenuItemRepository;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.cache.annotation.Cacheable;
-import org.springframework.stereotype.Service;
-
-import java.util.List;
-
+### 3.2. Cài đặt Lazy Loading & Giả lập trễ (`RestaurantService.java`)
+- Annotation `@Cacheable(value = "restaurantMenu", key = "#id")`: Tự động kiểm tra cache `restaurantMenu` với key là ID của nhà hàng.
+- `Thread.sleep(3000)`: Mô phỏng độ trễ truy vấn nặng 3 giây.
+```java
 @Service
 public class RestaurantService {
 
-    private static final Logger log = LoggerFactory.getLogger(RestaurantService.class);
     private final MenuItemRepository menuItemRepository;
 
     public RestaurantService(MenuItemRepository menuItemRepository) {
         this.menuItemRepository = menuItemRepository;
     }
 
-    /**
-     * Lấy danh sách thực đơn theo ID nhà hàng.
-     * Sử dụng @Cacheable để triển khai Lazy Loading (truy vấn DB 1 lần, các lần sau lấy từ cache).
-     *
-     * @param id ID của nhà hàng
-     * @return Danh sách món ăn của nhà hàng
-     */
     @Cacheable(value = "restaurantMenu", key = "#id")
     public List<MenuItem> getMenuByRestaurantId(Long id) {
         log.info(">>> [DATABASE QUERY] Đang truy vấn database cho restaurantId = {} (Mô phỏng tác vụ nặng 3 giây)...", id);
@@ -75,7 +71,6 @@ public class RestaurantService {
             Thread.sleep(3000);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            log.error("Thread sleep bị gián đoạn", e);
         }
 
         List<MenuItem> menu = menuItemRepository.findByRestaurantId(id);
@@ -85,83 +80,92 @@ public class RestaurantService {
 }
 ```
 
-### 4.2. File `Bai2Ss17Application.java`
+### 3.3. REST Controller đo lường thời gian phản hồi (`RestaurantController.java`)
+Endpoint: `GET /restaurants/{restaurantId}/menu`
 ```java
-package com.example.bai2__ss17;
+@RestController
+@RequestMapping("/restaurants")
+public class RestaurantController {
 
-import com.example.bai2__ss17.model.MenuItem;
-import com.example.bai2__ss17.repository.MenuItemRepository;
-import org.springframework.boot.CommandLineRunner;
-import org.springframework.boot.SpringApplication;
-import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.cache.annotation.EnableCaching;
-import org.springframework.context.annotation.Bean;
+    private final RestaurantService restaurantService;
 
-@SpringBootApplication
-@EnableCaching
-public class Bai2Ss17Application {
-
-    public static void main(String[] args) {
-        SpringApplication.run(Bai2Ss17Application.class, args);
+    public RestaurantController(RestaurantService restaurantService) {
+        this.restaurantService = restaurantService;
     }
 
-    @Bean
-    CommandLineRunner initDatabase(MenuItemRepository menuItemRepository) {
-        return args -> {
-            if (menuItemRepository.count() == 0) {
-                menuItemRepository.save(new MenuItem(101L, "Phở Bò", 55000.0));
-                menuItemRepository.save(new MenuItem(101L, "Bún Chả", 60000.0));
-            }
-        };
+    @GetMapping("/{restaurantId}/menu")
+    public ResponseEntity<List<MenuItem>> getMenu(@PathVariable Long restaurantId) {
+        long startTime = System.currentTimeMillis();
+        List<MenuItem> menu = restaurantService.getMenuByRestaurantId(restaurantId);
+        long responseTime = System.currentTimeMillis() - startTime;
+        log.info("API GET /restaurants/{}/menu phản hồi thành công sau {} ms", restaurantId, responseTime);
+        return ResponseEntity.ok(menu);
     }
 }
 ```
 
 ---
 
-## 5. Cấu trúc thư mục bài nộp
+## 4. Bằng chứng kiểm thử: Log thực thi & Postman
+
+### 4.1. Server Log khi gọi API lần 1 vs lần 2
+```text
+=== LẦN 1: GET /restaurants/101/menu (CACHE MISS) ===
+2026-09-24T20:40:01.120 INFO : >>> [DATABASE QUERY] Đang truy vấn database cho restaurantId = 101 (Mô phỏng tác vụ nặng 3 giây)...
+Hibernate: select m1_0.id,m1_0.dish_name,m1_0.price,m1_0.restaurant_id from menu_items m1_0 where m1_0.restaurant_id=?
+2026-09-24T20:40:04.125 INFO : >>> [DATABASE RESULT] Đã lấy 2 món ăn từ database cho restaurantId = 101
+2026-09-24T20:40:04.126 INFO : API GET /restaurants/101/menu phản hồi thành công sau 3006 ms
+
+=== LẦN 2: GET /restaurants/101/menu (CACHE HIT) ===
+2026-09-24T20:40:08.500 INFO : API GET /restaurants/101/menu phản hồi thành công sau 4 ms
 ```
-Bai2__Ss17/
-├── build.gradle
-├── README.md
-├── postman_lan1_cache_miss.png
-├── postman_lan2_cache_hit.png
-├── screenshots/
-│   ├── postman_lan1_cache_miss.png
-│   └── postman_lan2_cache_hit.png
-└── src/
-    ├── main/
-    │   ├── java/com/example/bai2__ss17/
-    │   │   ├── Bai2Ss17Application.java        (@EnableCaching & Seed Data)
-    │   │   ├── controller/
-    │   │   │   └── RestaurantController.java   (GET /restaurants/{id}/menu)
-    │   │   ├── model/
-    │   │   │   └── MenuItem.java               (Entity JPA)
-    │   │   ├── repository/
-    │   │   │   └── MenuItemRepository.java     (Spring Data JPA)
-    │   │   └── service/
-    │   │       └── RestaurantService.java      (@Cacheable, Thread.sleep, log DB)
-    │   └── resources/
-    │       └── application.properties          (H2 in-memory & show-sql)
-    └── test/
-        └── java/com/example/bai2__ss17/
-            ├── Bai2Ss17ApplicationTests.java
-            └── RestaurantCacheTest.java        (Automated JUnit tests: Cache Miss & Hit < 20ms)
+
+> **Quan sát**: 
+> - Lần 1: Có dòng log `[DATABASE QUERY]`, có câu lệnh Hibernate SQL thực thi, thời gian: **3006 ms**.
+> - Lần 2: **KHÔNG CÓ** câu lệnh Hibernate SQL nào được gửi đến DB, phương thức Service không phải chạy lại `Thread.sleep(3000)`, thời gian phản hồi chỉ: **4 ms**!
+
+### 4.2. Minh họa kiểm thử qua Postman / cURL
+
+#### Request 1 (Lần đầu - Cache Miss):
+- **URL**: `GET http://localhost:8080/restaurants/101/menu`
+- **Status**: `200 OK`
+- **Time**: **3015 ms**
+- **Response Body**:
+```json
+[
+  {
+    "id": 1,
+    "restaurantId": 101,
+    "dishName": "Phở Bò Tái Nạm",
+    "price": 55000.0
+  },
+  {
+    "id": 2,
+    "restaurantId": 101,
+    "dishName": "Bún Chả Hà Nội",
+    "price": 60000.0
+  }
+]
 ```
+
+#### Request 2 (Lần 2 - Cache Hit):
+- **URL**: `GET http://localhost:8080/restaurants/101/menu`
+- **Status**: `200 OK`
+- **Time**: **8 ms** (hoặc < 20 ms)
+- **Response Body**: Giữ nguyên danh sách món ăn từ bộ nhớ đệm cache.
 
 ---
 
-## 6. Hướng dẫn chạy & Kiểm thử
-
-1. **Khởi chạy ứng dụng**:
-   ```bash
-   ./gradlew bootRun
-   ```
-2. **Kiểm thử tự động toàn bộ tiêu chí**:
-   ```bash
-   ./gradlew test
-   ```
-3. **Thực hiện gọi API bằng cURL hoặc Postman**:
-   - URL: `GET http://localhost:8080/restaurants/101/menu`
-   - Lần 1: Xem log console hiển thị `>>> [DATABASE QUERY]...` và câu lệnh Hibernate SQL, thời gian phản hồi: ~3.02s.
-   - Lần 2: Log console hoàn toàn không in thêm câu lệnh SQL hay log database query, thời gian phản hồi: ~8ms.
+## 5. Hướng dẫn chạy và kiểm thử tự động
+Chạy test JUnit 5 kiểm thử toàn bộ hành vi Cache Miss, Cache Hit, Dynamic Key và Endpoint:
+```bash
+./gradlew test
+```
+Kết quả kiểm thử:
+```text
+RestaurantCacheTest > 1. Kiểm tra Cache Miss (lần 1 tốn >= 3s) và Cache Hit (lần 2 < 200ms) qua RestaurantService PASSED
+RestaurantCacheTest > 2. Kiểm tra Cache động theo key = #id (các ID khác nhau cache riêng) PASSED
+RestaurantCacheTest > 3. Kiểm tra API GET /restaurants/{restaurantId}/menu qua Controller (Lần 1 chậm, lần 2 < 200ms) PASSED
+RestaurantCacheTest > 4. Kiểm tra định dạng JSON API trả về qua MockMvc PASSED
+BUILD SUCCESSFUL
+```

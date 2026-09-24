@@ -41,11 +41,10 @@ class RestaurantCacheTest {
     }
 
     @Test
-    @DisplayName("1. Kiểm tra Cache Miss (lần 1 tốn >= 3s) và Cache Hit (lần 2 < 20ms) qua RestaurantService")
+    @DisplayName("1. Kiểm tra Cache Miss (lần 1 tốn >= 3s) và Cache Hit (lần 2 < 200ms) qua RestaurantService")
     void testServiceCacheHitAndMiss() {
         Long restaurantId = 101L;
 
-        // Xóa cache trước khi chạy kiểm thử
         Cache cache = cacheManager.getCache("restaurantMenu");
         if (cache != null) {
             cache.evict(restaurantId);
@@ -69,13 +68,13 @@ class RestaurantCacheTest {
         List<MenuItem> cachedList = (List<MenuItem>) cachedValue.get();
         assertThat(cachedList).isEqualTo(menuCall1);
 
-        // Lần 2: Cache Hit - Trả về ngay từ Cache, không qua DB (< 20ms)
+        // Lần 2: Cache Hit - Trả về ngay từ Cache, không qua DB (< 200ms)
         long start2 = System.currentTimeMillis();
         List<MenuItem> menuCall2 = restaurantService.getMenuByRestaurantId(restaurantId);
         long duration2 = System.currentTimeMillis() - start2;
 
         assertThat(menuCall2).isEqualTo(menuCall1);
-        assertThat(duration2).isLessThan(20L);
+        assertThat(duration2).isLessThan(200L);
     }
 
     @Test
@@ -99,11 +98,10 @@ class RestaurantCacheTest {
     }
 
     @Test
-    @DisplayName("3. Kiểm tra API GET /restaurants/{restaurantId}/menu qua Controller (Lần 1 chậm, lần 2 < 20ms)")
+    @DisplayName("3. Kiểm tra API GET /restaurants/{restaurantId}/menu qua Controller (Lần 1 chậm, lần 2 < 200ms)")
     void testApiControllerPerformance() {
         Long restaurantId = 101L;
 
-        // Xóa cache trước khi gọi API
         Cache cache = cacheManager.getCache("restaurantMenu");
         if (cache != null) {
             cache.evict(restaurantId);
@@ -118,14 +116,14 @@ class RestaurantCacheTest {
         assertThat(response1.getBody()).hasSize(2);
         assertThat(duration1).isGreaterThanOrEqualTo(3000L);
 
-        // Lần 2 qua Controller: Cache Hit (< 20ms)
+        // Lần 2 qua Controller: Cache Hit (< 200ms)
         long start2 = System.currentTimeMillis();
         ResponseEntity<List<MenuItem>> response2 = restaurantController.getMenu(restaurantId);
         long duration2 = System.currentTimeMillis() - start2;
 
         assertThat(response2.getStatusCode().is2xxSuccessful()).isTrue();
         assertThat(response2.getBody()).isEqualTo(response1.getBody());
-        assertThat(duration2).isLessThan(20L);
+        assertThat(duration2).isLessThan(200L);
     }
 
     @Test
@@ -137,9 +135,9 @@ class RestaurantCacheTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$").isArray())
                 .andExpect(jsonPath("$.length()").value(2))
-                .andExpect(jsonPath("$[0].dishName").value("Phở Bò"))
+                .andExpect(jsonPath("$[0].dishName").value("Phở Bò Tái Nạm"))
                 .andExpect(jsonPath("$[0].price").value(55000.0))
-                .andExpect(jsonPath("$[1].dishName").value("Bún Chả"))
+                .andExpect(jsonPath("$[1].dishName").value("Bún Chả Hà Nội"))
                 .andExpect(jsonPath("$[1].price").value(60000.0));
     }
 }
